@@ -41,6 +41,51 @@ export type Database = {
         }
         Relationships: []
       }
+      menu_items: {
+        Row: {
+          id: string
+          slug: string
+          name: string
+          description: string
+          price: number
+          category: 'coffee' | 'food' | 'drinks'
+          image_url: string | null
+          is_drink: boolean
+          badge: string | null
+          active: boolean
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          slug: string
+          name: string
+          description?: string
+          price: number
+          category: 'coffee' | 'food' | 'drinks'
+          image_url?: string | null
+          badge?: string | null
+          active?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          slug?: string
+          name?: string
+          description?: string
+          price?: number
+          category?: 'coffee' | 'food' | 'drinks'
+          image_url?: string | null
+          badge?: string | null
+          active?: boolean
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -49,6 +94,10 @@ export type Database = {
       submit_customer_order: {
         Args: { lines: Json; request_id: string }
         Returns: Json
+      }
+      is_admin: {
+        Args: Record<string, never>
+        Returns: boolean
       }
     }
     Enums: {

@@ -2,16 +2,14 @@ import { z } from "zod";
 
 export const sugarSchema = z.union([z.literal(0), z.literal(25), z.literal(50), z.literal(75), z.literal(100)]);
 export type Sugar = z.infer<typeof sugarSchema>;
-export const orderLineSchema = z.object({
-  id: z.enum(["latte", "croissant", "iced", "avocado", "matcha", "berry"]),
-  qty: z.number().int().min(1).max(20),
-  sugar: sugarSchema.nullable(),
-}).strict().superRefine((line, ctx) => {
-  const food = line.id === "croissant" || line.id === "avocado";
-  if (food !== (line.sugar === null)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Choose a sugar level for each drink only." });
-  }
-});
+export const orderLineSchema = z
+  .object({
+    // slug-style id — server RPC validates existence against menu_items table
+    id: z.string().min(1).max(60).regex(/^[a-z0-9-]+$/, "Invalid item id"),
+    qty: z.number().int().min(1).max(20),
+    sugar: sugarSchema.nullable(),
+  })
+  .strict();
 export const orderSchema = z.object({
   requestId: z.string().uuid(),
   lines: z.array(orderLineSchema).min(1).max(22),

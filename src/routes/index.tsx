@@ -7,12 +7,42 @@ import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/
 import { OrderConfirmation } from "@/components/order-confirmation";
 import { submitOrder } from "@/lib/orders.functions";
 import { orderSchema, type Receipt } from "@/lib/orders";
+import { listPublicMenuItems } from "@/lib/menu.functions";
+import type { PublicMenuItem } from "@/lib/menu";
 import latte from "@/assets/latte.jpg.asset.json";
 import croissant from "@/assets/croissant.jpg.asset.json";
 import iced from "@/assets/iced-latte.jpg.asset.json";
 import avocado from "@/assets/avocado-toast.jpg.asset.json";
 import matcha from "@/assets/matcha.jpg.asset.json";
 import berry from "@/assets/berry-tea.jpg.asset.json";
+
+
+// ── Static fallback (used when Supabase returns nothing) ────────────────────
+type StaticItem = { id: string; name: string; desc: string; price: number; img: string; cat: string; badge?: string; isDrink: boolean };
+const STATIC_ITEMS: StaticItem[] = [
+  { id: "latte",     name: "Signature Latte",     desc: "Rich espresso, silky milk. A hug in a cup.",              price: 65, img: latte.url,     cat: "coffee", badge: "Crowd favorite", isDrink: true  },
+  { id: "croissant", name: "Butter Croissant",     desc: "Golden, flaky, buttery. Simple things done right.",       price: 50, img: croissant.url, cat: "food",   badge: "Freshly baked",  isDrink: false },
+  { id: "iced",      name: "Iced Spanish Latte",   desc: "Bold coffee, a sweet little twist. Perfectly chilled.",  price: 70, img: iced.url,      cat: "coffee", isDrink: true  },
+  { id: "avocado",   name: "Avocado Toast",         desc: "Creamy avocado on toasted sourdough. Brunch, sorted.",  price: 70, img: avocado.url,   cat: "food",   isDrink: false },
+  { id: "matcha",    name: "Iced Matcha Latte",     desc: "Earthy matcha, creamy milk. Your moment of calm.",      price: 65, img: matcha.url,    cat: "drinks", isDrink: true  },
+  { id: "berry",     name: "Berry Hibiscus Tea",    desc: "Bright berries, floral hibiscus. A refreshing escape.", price: 60, img: berry.url,     cat: "drinks", isDrink: true  },
+];
+
+type MenuRow = { id: string; name: string; desc: string; price: number; img: string; cat: string; badge?: string | null; isDrink: boolean };
+
+function toMenuRow(item: PublicMenuItem): MenuRow {
+  const IMG_MAP: Record<string, string> = { latte: latte.url, croissant: croissant.url, iced: iced.url, avocado: avocado.url, matcha: matcha.url, berry: berry.url };
+  return {
+    id:      item.slug,
+    name:    item.name,
+    desc:    item.description,
+    price:   item.price,
+    img:     item.imageUrl ?? IMG_MAP[item.slug] ?? latte.url,
+    cat:     item.category,
+    badge:   item.badge,
+    isDrink: item.isDrink,
+  };
+}
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -30,15 +60,7 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-type Cat = "coffee" | "food" | "drinks";
-const ITEMS: { id: string; name: string; desc: string; price: number; img: string; cat: Cat; badge?: string }[] = [
-  { id: "latte", name: "Signature Latte", desc: "Rich espresso, silky milk. A hug in a cup.", price: 65, img: latte.url, cat: "coffee", badge: "Crowd favorite" },
-  { id: "croissant", name: "Butter Croissant", desc: "Golden, flaky, buttery. Simple things done right.", price: 50, img: croissant.url, cat: "food", badge: "Freshly baked" },
-  { id: "iced", name: "Iced Spanish Latte", desc: "Bold coffee, a sweet little twist. Perfectly chilled.", price: 70, img: iced.url, cat: "coffee" },
-  { id: "avocado", name: "Avocado Toast", desc: "Creamy avocado on toasted sourdough. Brunch, sorted.", price: 70, img: avocado.url, cat: "food" },
-  { id: "matcha", name: "Iced Matcha Latte", desc: "Earthy matcha, creamy milk. Your moment of calm.", price: 65, img: matcha.url, cat: "drinks" },
-  { id: "berry", name: "Berry Hibiscus Tea", desc: "Bright berries, floral hibiscus. A refreshing escape.", price: 60, img: berry.url, cat: "drinks" },
-];
+
 
 const FILTERS = [
   { id: "all", label: "All", icon: Sparkles },
@@ -56,7 +78,6 @@ const SUGAR_LEVELS = [
   { pct: 100, label: "100%" },
 ] as const;
 type Sugar = 0 | 25 | 50 | 75 | 100;
-const isDrink = (cat: Cat) => cat === "coffee" || cat === "drinks";
 const sugarLabel = (s: Sugar) => (s === 0 ? "no sugar" : s === 100 ? "standard sugar" : `${s}% sugar`);
 
 function Brand() {
@@ -80,10 +101,19 @@ function Index() {
   const pendingRequest = useRef<{ fingerprint: string; id: string } | null>(null);
   const submitLock = useRef(false);
   const placeOrder = useServerFn(submitOrder);
+  const fetchMenu = useServerFn(listPublicMenuItems);
+  const [ITEMS, setItems] = useState<MenuRow[]>(STATIC_ITEMS);
 
   useEffect(() => {
     try { setSaved(JSON.parse(localStorage.getItem("sunday-saved") || "[]")); } catch { /* ignore */ }
   }, []);
+
+  // Load live menu from Supabase; gracefully fall back to STATIC_ITEMS
+  useEffect(() => {
+    fetchMenu().then((rows) => {
+      if (rows.length > 0) setItems(rows.map(toMenuRow));
+    }).catch(() => { /* keep static fallback */ });
+  }, [fetchMenu]);
   const toggleSave = (id: string) =>
     setSaved((s) => {
       const n = s.includes(id) ? s.filter((x) => x !== id) : [...s, id];
@@ -100,6 +130,7 @@ function Index() {
 
   const shown = ITEMS.filter((i) => (filter === "all" ? true : filter === "saved" ? saved.includes(i.id) : i.cat === filter));
   const count = Object.values(cart).reduce((a, b) => a + b, 0);
+  const isDrink = (row: MenuRow) => row.isDrink;
   const orderLines = useMemo(
     () =>
       Object.entries(cart)
@@ -107,8 +138,8 @@ function Index() {
           const [id, sugar] = key.split(":");
           return { key, item: ITEMS.find((i) => i.id === id), sugar: Number(sugar) as Sugar, qty };
         })
-        .filter((l): l is typeof l & { item: (typeof ITEMS)[number] } => Boolean(l.item)),
-    [cart]
+        .filter((l): l is typeof l & { item: MenuRow } => Boolean(l.item)),
+    [cart, ITEMS]
   );
   const total = useMemo(() => orderLines.reduce((t, l) => t + l.qty * l.item.price, 0), [orderLines]);
 
@@ -222,7 +253,7 @@ function Index() {
             {shown.map((item) => {
               const fav = saved.includes(item.id);
               const sugarPct = sugarChoice[item.id] ?? 100;
-              const cartKey = isDrink(item.cat) ? `${item.id}:${sugarPct}` : `${item.id}:none`;
+              const cartKey = isDrink(item) ? `${item.id}:${sugarPct}` : `${item.id}:none`;
               const q = cart[cartKey] || 0;
               return (
                 <article key={item.id} className="group overflow-hidden rounded-3xl bg-surface shadow-soft transition-all hover:-translate-y-1 hover:shadow-lift">
@@ -237,7 +268,7 @@ function Index() {
                   <div className="p-5">
                     <h3 className="text-xl font-semibold">{item.name}</h3>
                     <p className="mt-1 text-sm text-muted-foreground">{item.desc}</p>
-                    {isDrink(item.cat) && (
+                    {isDrink(item) && (
                       <div className="mt-4">
                         <p className="text-xs font-semibold tracking-wide text-muted-foreground">Sugar level</p>
                         <div className="mt-2 flex gap-1.5">
@@ -315,7 +346,7 @@ function Index() {
                   <div className="flex-1">
                     <p className="font-semibold">{l.item.name}</p>
                     <p className="text-sm text-muted-foreground">
-                      ₱{l.item.price} each{isDrink(l.item.cat) && <> · {l.sugar}% sugar</>}
+                      ₱{l.item.price} each{isDrink(l.item) && <> · {l.sugar}% sugar</>}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
